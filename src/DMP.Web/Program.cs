@@ -33,8 +33,19 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 StripeConfiguration.ApiKey = builder.Configuration["Stripe:SecretKey"];
 
 // DB
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(opt =>
-    opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    if (string.IsNullOrEmpty(connectionString) ||
+        (connectionString.Contains("localdb") && !System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)))
+    {
+        opt.UseInMemoryDatabase("DMP_Dev");
+    }
+    else
+    {
+        opt.UseSqlServer(connectionString);
+    }
+});
 
 // Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(opt =>
@@ -90,7 +101,14 @@ using (var scope = app.Services.CreateScope())
 {
     // تطبيق الـ migrations تلقائياً عند كل تشغيل (يعمل من VS أو terminal)
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    await db.Database.MigrateAsync();
+    if (db.Database.IsRelational())
+    {
+        await db.Database.MigrateAsync();
+    }
+    else
+    {
+        await db.Database.EnsureCreatedAsync();
+    }
 
     await SeedData.InitializeAsync(scope.ServiceProvider);
 }
